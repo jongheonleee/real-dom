@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+
+    <ul></ul>
+    
+    <script>
+        
+        var divE = document.createElement('div');
+        var docFrag = document.createDocumentFragment();
+
+        docFrag.appendChild(divE);
+        docFrag.querySelector('div').innerHTML = '<ul><li>foo</li><li>bar</li></ul>';
+
+        document.querySelector('div').appendChild(
+            docFrag.querySelector('div').firstChild
+        );
+
+        console.log(docFrag.querySelector('div').innerHTML); // 0
+    
+    </script>
+</body>
+</html>

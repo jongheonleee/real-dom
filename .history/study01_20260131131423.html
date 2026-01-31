@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+
+    <ul></ul>
+    
+    <script>
+        
+        var ulE = document.querySelector('ul');
+        var docFrag = document.createDocumentFragment();
+
+        ['blue', 'red', 'green'].forEach(function(e) {
+            var li = document.createElement('li');
+            li.textContent = e;
+            docFrag.appendChild(li);
+        });
+
+        ulE.appendChild(docFrag);
+
+        console.log(docFrag.textContent);
+    </script>
+</body>
+</html>

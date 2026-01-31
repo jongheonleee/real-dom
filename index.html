@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>DOM 동작 원리 학습</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Noto Sans KR', sans-serif; padding: 20px; background: #f5f5f5; }
+    h1 { color: #333; }
+    h2 { color: #555; margin-top: 30px; border-bottom: 2px solid #ddd; padding-bottom: 10px; }
+
+    .demo-section { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+
+    /* 이벤트 데모용 */
+    .event-demo { display: flex; gap: 40px; align-items: flex-start; }
+    .nested-boxes { flex: 1; }
+    .box {
+      padding: 20px;
+      border: 3px solid;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .box-outer {
+      background: #ffebee;
+      border-color: #e53935;
+    }
+    .box-middle {
+      background: #fff3e0;
+      border-color: #fb8c00;
+      margin-top: 15px;
+    }
+    .box-inner {
+      background: #e3f2fd;
+      border-color: #1e88e5;
+      margin-top: 15px;
+      cursor: pointer;
+    }
+    .box.highlight {
+      transform: scale(1.02);
+      box-shadow: 0 0 15px rgba(0,0,0,0.3);
+    }
+
+    .event-log {
+      flex: 1;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 8px;
+      font-family: 'Consolas', monospace;
+      font-size: 13px;
+      min-height: 300px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .log-entry { margin: 3px 0; }
+    .log-capture { color: #4fc3f7; }
+    .log-target { color: #81c784; font-weight: bold; }
+    .log-bubble { color: #ffb74d; }
+
+    /* 트리 구조 시각화 */
+    .tree { margin: 20px 0; }
+    .tree-node {
+      padding: 8px 12px;
+      background: #e8f5e9;
+      border: 2px solid #4caf50;
+      border-radius: 4px;
+      display: inline-block;
+      margin: 5px;
+    }
+    .tree-children {
+      margin-left: 30px;
+      padding-left: 20px;
+      border-left: 2px dashed #aaa;
+    }
+
+    /* 상속 계층 */
+    .inheritance-diagram {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
+    .class-box {
+      padding: 15px 30px;
+      border-radius: 8px;
+      font-weight: bold;
+      text-align: center;
+      min-width: 200px;
+    }
+    .class-eventtarget { background: #e1bee7; border: 2px solid #9c27b0; }
+    .class-node { background: #bbdefb; border: 2px solid #1976d2; }
+    .class-element { background: #c8e6c9; border: 2px solid #388e3c; }
+    .class-text { background: #ffe0b2; border: 2px solid #f57c00; }
+    .class-document { background: #f8bbd0; border: 2px solid #c2185b; }
+    .arrow { font-size: 24px; color: #666; }
+
+    code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    .keyword { color: #569cd6; }
+    .string { color: #ce9178; }
+    .comment { color: #6a9955; }
+
+    button { padding: 8px 16px; margin: 5px; cursor: pointer; border-radius: 4px; border: none; background: #1976d2; color: white; }
+    button:hover { background: #1565c0; }
+  </style>
+</head>
+<body>
+  <h1>DOM 동작 원리 학습</h1>
+
+  <!-- 1. 상속 계층 -->
+  <div class="demo-section">
+    <h2>1. DOM 클래스 상속 계층</h2>
+    <p>DOM은 OOP의 상속을 활용한 계층 구조입니다. 모든 것은 <code>EventTarget</code>에서 시작합니다.</p>
+
+    <div class="inheritance-diagram">
+      <div class="class-box class-eventtarget">
+        EventTarget<br>
+        <small>addEventListener, dispatchEvent</small>
+      </div>
+      <div class="arrow">↓</div>
+      <div class="class-box class-node">
+        Node<br>
+        <small>parentNode, childNodes, appendChild</small>
+      </div>
+      <div class="arrow">↓</div>
+      <div style="display: flex; gap: 20px;">
+        <div class="class-box class-element">
+          Element<br>
+          <small>tagName, attributes, querySelector</small>
+        </div>
+        <div class="class-box class-text">
+          Text<br>
+          <small>data (텍스트 내용)</small>
+        </div>
+        <div class="class-box class-document">
+          Document<br>
+          <small>createElement, getElementById</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. 이벤트 전파 -->
+  <div class="demo-section">
+    <h2>2. 이벤트 전파 (Capturing → Target → Bubbling)</h2>
+    <p>파란 박스(INNER)를 클릭하면 이벤트가 3단계로 전파됩니다.</p>
+
+    <div class="event-demo">
+      <div class="nested-boxes">
+        <div id="outer" class="box box-outer">
+          <strong>OUTER (div)</strong> - Capturing 먼저, Bubbling 나중
+          <div id="middle" class="box box-middle">
+            <strong>MIDDLE (div)</strong>
+            <div id="inner" class="box box-inner">
+              <strong>INNER (div)</strong> - 클릭하세요!
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 15px;">
+          <button onclick="clearLog()">로그 지우기</button>
+          <label><input type="checkbox" id="stopProp"> stopPropagation 활성화</label>
+        </div>
+      </div>
+
+      <div class="event-log" id="eventLog">
+        <div style="color: #888;">클릭 이벤트 로그가 여기에 표시됩니다...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. 트리 구조 -->
+  <div class="demo-section">
+    <h2>3. DOM 트리 구조</h2>
+    <p>DOM은 트리 자료구조입니다. 각 노드는 <code>parentNode</code>, <code>childNodes</code>, <code>nextSibling</code> 등으로 연결됩니다.</p>
+
+    <div id="treeVisualization" class="tree"></div>
+
+    <pre><code><span class="comment">// 트리 탐색 예시</span>
+element.<span class="keyword">parentNode</span>        <span class="comment">// 부모 노드</span>
+element.<span class="keyword">childNodes</span>        <span class="comment">// 자식 노드 배열</span>
+element.<span class="keyword">firstChild</span>        <span class="comment">// 첫 번째 자식</span>
+element.<span class="keyword">lastChild</span>         <span class="comment">// 마지막 자식</span>
+element.<span class="keyword">nextSibling</span>       <span class="comment">// 다음 형제</span>
+element.<span class="keyword">previousSibling</span>   <span class="comment">// 이전 형제</span></code></pre>
+  </div>
+
+  <!-- 4. 요소 검색 -->
+  <div class="demo-section">
+    <h2>4. 요소 검색 메서드</h2>
+
+    <div style="display: flex; gap: 20px;">
+      <div style="flex: 1;">
+        <h3>단일 요소 반환</h3>
+        <pre><code>document.<span class="keyword">getElementById</span>(<span class="string">'id'</span>)
+document.<span class="keyword">querySelector</span>(<span class="string">'.class'</span>)
+element.<span class="keyword">closest</span>(<span class="string">'selector'</span>)</code></pre>
+      </div>
+      <div style="flex: 1;">
+        <h3>컬렉션 반환</h3>
+        <pre><code>document.<span class="keyword">getElementsByTagName</span>(<span class="string">'div'</span>)
+document.<span class="keyword">getElementsByClassName</span>(<span class="string">'class'</span>)
+document.<span class="keyword">querySelectorAll</span>(<span class="string">'div.class'</span>)</code></pre>
+      </div>
+    </div>
+
+    <p><strong>핵심:</strong> <code>querySelector</code>는 CSS 셀렉터를 사용하여 트리를 DFS(깊이 우선 탐색)합니다.</p>
+  </div>
+
+  <!-- 5. 노드 조작 -->
+  <div class="demo-section">
+    <h2>5. 노드 조작 (CRUD)</h2>
+
+    <pre><code><span class="comment">// 생성 (Create)</span>
+const div = document.<span class="keyword">createElement</span>(<span class="string">'div'</span>);
+const text = document.<span class="keyword">createTextNode</span>(<span class="string">'Hello'</span>);
+
+<span class="comment">// 추가 (Append)</span>
+parent.<span class="keyword">appendChild</span>(child);
+parent.<span class="keyword">insertBefore</span>(newNode, referenceNode);
+
+<span class="comment">// 삭제 (Delete)</span>
+parent.<span class="keyword">removeChild</span>(child);
+
+<span class="comment">// 교체 (Update)</span>
+parent.<span class="keyword">replaceChild</span>(newChild, oldChild);
+
+<span class="comment">// 복제 (Clone)</span>
+const clone = node.<span class="keyword">cloneNode</span>(true);  <span class="comment">// deep clone</span></code></pre>
+
+    <p><strong>핵심:</strong> 노드는 하나의 부모만 가질 수 있습니다. 다른 곳에 <code>appendChild</code>하면 원래 위치에서 제거됩니다.</p>
+  </div>
+
+  <script>
+    // 이벤트 로깅
+    const eventLog = document.getElementById('eventLog');
+    const outer = document.getElementById('outer');
+    const middle = document.getElementById('middle');
+    const inner = document.getElementById('inner');
+
+    function log(phase, element, event) {
+      const phaseNames = { 1: 'CAPTURING', 2: 'AT_TARGET', 3: 'BUBBLING' };
+      const phaseClasses = { 1: 'log-capture', 2: 'log-target', 3: 'log-bubble' };
+
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${phaseClasses[event.eventPhase]}`;
+      entry.textContent = `[${phaseNames[event.eventPhase]}] ${element.id.toUpperCase()} - target: ${event.target.id}, currentTarget: ${event.currentTarget.id}`;
+      eventLog.appendChild(entry);
+      eventLog.scrollTop = eventLog.scrollHeight;
+
+      // 하이라이트
+      element.classList.add('highlight');
+      setTimeout(() => element.classList.remove('highlight'), 200);
+    }
+
+    function clearLog() {
+      eventLog.innerHTML = '<div style="color: #888;">로그가 지워졌습니다. 다시 클릭하세요...</div>';
+    }
+
+    // Capturing 리스너 (세 번째 인자 true)
+    outer.addEventListener('click', (e) => log('CAPTURING', outer, e), true);
+    middle.addEventListener('click', (e) => log('CAPTURING', middle, e), true);
+    inner.addEventListener('click', (e) => log('CAPTURING', inner, e), true);
+
+    // Bubbling 리스너 (기본값)
+    outer.addEventListener('click', (e) => log('BUBBLING', outer, e));
+    middle.addEventListener('click', (e) => log('BUBBLING', middle, e));
+    inner.addEventListener('click', (e) => {
+      log('BUBBLING', inner, e);
+      if (document.getElementById('stopProp').checked) {
+        e.stopPropagation();
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        entry.style.color = '#f44336';
+        entry.textContent = '🛑 stopPropagation() 호출됨 - 버블링 중단!';
+        eventLog.appendChild(entry);
+      }
+    });
+
+    // 트리 시각화
+    function visualizeTree(element, container) {
+      const nodeDiv = document.createElement('div');
+
+      const nodeBox = document.createElement('span');
+      nodeBox.className = 'tree-node';
+      nodeBox.textContent = element.tagName || element.nodeName;
+      if (element.id) nodeBox.textContent += `#${element.id}`;
+      nodeDiv.appendChild(nodeBox);
+
+      if (element.children && element.children.length > 0) {
+        const childrenDiv = document.createElement('div');
+        childrenDiv.className = 'tree-children';
+
+        for (const child of element.children) {
+          visualizeTree(child, childrenDiv);
+        }
+        nodeDiv.appendChild(childrenDiv);
+      }
+
+      container.appendChild(nodeDiv);
+    }
+
+    // body의 첫 번째 섹션만 시각화
+    visualizeTree(document.querySelector('.demo-section'), document.getElementById('treeVisualization'));
+  </script>
+
+  <script src="mini-dom.js"></script>
+</body>
+</html>
